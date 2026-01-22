@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "drug_db"
+version = "0.1.0"
+description = "collection of withdrawn drugs from various sources"
+requires-python = ">=3.14"
+dependencies = [
+    "beautifulsoup4>=4.14.3",
+    "lxml>=6.0.2",
+    "rdkit>=2025.9.3",
+    "requests>=2.32.5",
+    "sqlalchemy>=2.0.45",
+]
