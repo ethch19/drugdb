@@ -25,7 +25,7 @@ class DbManager:
     def __init__(self, db_name: str = "drugs"):
         self.db_path = ROOT_DIR / "data" / f"{db_name}.db"
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.engine = create_engine(f"sqlite:////{self.db_path.absolute()}", echo=True)
+        self.engine = create_engine(f"sqlite:////{self.db_path.absolute()}", echo=False)
         self.session = sessionmaker(bind=self.engine)
 
     def create_tables(self):

@@ -11,8 +11,6 @@ from bs4 import BeautifulSoup
 from rdkit import Chem
 from rdkit.Chem.rdDepictor import Compute2DCoords
 
-from drug_db.database.manager import db
-
 
 @dataclass
 class ProToxConfig:
@@ -313,8 +311,6 @@ class ProToxModel:
 
 
 if __name__ == "__main__":
-    db.create_tables()
-
     model = ProToxModel()
 
     request_full = (

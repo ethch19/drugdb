@@ -1,7 +1,7 @@
 from types import NotImplementedType
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, UniqueConstraint
+from sqlalchemy import JSON, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -12,13 +12,18 @@ if TYPE_CHECKING:
 
 class Source(Base):
     __tablename__ = "sources"
+    __table_args__ = (
+        UniqueConstraint("name", "version", name="unique_source_version"),
+    )
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(unique=True)
-    url: Mapped[str | None]
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True, init=False)
+    name: Mapped[str]
+    version: Mapped[str]
+    date_accessed: Mapped[str]  # ISO8601 "YYYY-MM-DD HH:MM:SS.SSS"
+    url: Mapped[str | None] = mapped_column(default=None)
 
     records: Mapped[list["SourceRecord"]] = relationship(
-        back_populates="source", cascade="all, delete-orphan"
+        back_populates="source", cascade="all, delete-orphan", default_factory=list
     )
 
     def __str__(self) -> str:
@@ -27,6 +32,8 @@ class Source(Base):
         --------------- 
         id: {self.id}
         name: {self.name}
+        version: {self.version}
+        date accessed: {self.date_accessed}
         url: {self.url}
         """
 
@@ -45,30 +52,27 @@ class SourceRecord(Base):
         UniqueConstraint("source_id", "drug_inchi_key", name="unique_source_drug"),
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True, init=False)
     drug_inchi_key: Mapped[str] = mapped_column(
         ForeignKey("drugs.inchi_key", ondelete="CASCADE")
     )
     source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"))
-    data_json: Mapped[str]
+    data_json: Mapped[dict] = mapped_column(JSON)  # staged before saving
 
-    drug: Mapped["Drug"] = relationship(back_populates="sources")
-    source: Mapped["Source"] = relationship(back_populates="records")
+    drug: Mapped["Drug"] = relationship(back_populates="sources", init=False)
+    source: Mapped["Source"] = relationship(back_populates="records", init=False)
 
     def __str__(self) -> str:
         return f"""
-        Drug Class Obj
+        SourceRecord Class Obj
         --------------- 
-        Generic Name: {self.generic_name}
-        IUPAC Name: {self.iupac_name}
-        Brand Names: {", ".join(self.brand_names) if self.brand_names else "None"}
-        InChI: {self.inchi}
-        SMILES: {self.smiles}
-        Chemical Formula: {self.chem_formula}
-        Molecular Weight: {round(self.mol_weight, 3)}
+        Id: {self.id}
+        Source Id: {self.source_id}
+        InChI Key: {self.drug_inchi_key}
         """
+        # Data Json: {json.dumps(self.data_json, indent=2)}
 
     def __eq__(self, other: object) -> bool | NotImplementedType:
-        if not isinstance(other, Drug):
+        if not isinstance(other, SourceRecord):
             return NotImplemented
-        return self.inchi_key == other.inchi_key
+        return self.drug_inchi_key == other.drug_inchi_key
