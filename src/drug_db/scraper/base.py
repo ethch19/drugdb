@@ -66,8 +66,8 @@ class BaseScraper(ABC):
                         self.session.commit()
                         timers["db_load"] += time.perf_counter() - t3
 
-                    if (count + skipped_count) > 1000:
-                        break
+                    # if (count + skipped_count) > 1000:
+                    #     break
                 else:
                     skipped_count += 1
 

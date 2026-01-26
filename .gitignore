@@ -9,5 +9,8 @@ wheels/
 # Virtual environments
 .venv
 
-# Custom
-data/
+# Data
+data/**/*
+!data/
+!data/**/*.json
+!data/**/*.db
