@@ -11,6 +11,3 @@ wheels/
 
 # Data
 data/**/*
-!data/
-!data/**/*.json
-!data/**/*.db
