@@ -54,9 +54,9 @@ class SourceRecord(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True, init=False)
     drug_inchi_key: Mapped[str] = mapped_column(
-        ForeignKey("drugs.inchi_key", ondelete="CASCADE")
+        ForeignKey("drugs.inchi_key", ondelete="CASCADE"), index=True
     )
-    source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"))
+    source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), index=True)
     data_json: Mapped[dict] = mapped_column(JSON)  # staged before saving
 
     drug: Mapped["Drug"] = relationship(back_populates="sources", init=False)

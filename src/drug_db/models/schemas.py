@@ -41,9 +41,7 @@ class DrugSchema(BaseModel):
             except Exception:
                 pass
 
-        missing_ids = not all(
-            [data.get("inchi_key"), data.get("drugbank_id"), data.get("chembl_id")]
-        )
+        missing_ids = not data.get("inchi_key")
 
         if missing_ids and name:
             try:

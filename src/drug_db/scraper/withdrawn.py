@@ -1,9 +1,11 @@
+from multiprocessing import Pool
 from typing import Iterator, List, NamedTuple
 
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from drug_db.database.manager import Session
 from drug_db.models.schemas import DrugSchema, RecordSchema, ScraperPayload
 from drug_db.scraper.base import BaseAdapter, BaseFileScraper
 
@@ -15,7 +17,7 @@ dtype_spec = {
     "cid": "str",  # PubChem compound id
     "chemblid": "str",
     "inchi": "str",
-    "inchi_key": "str",
+    "inchikey": "str",
     "smiles": "str",
     "ld50": "Float64",
     "toxclass": "Int8",  # protox-ii tox class (I to VI, according GHS)
@@ -80,7 +82,55 @@ class WithdrawnSourceData(BaseModel):
         return [x.strip() for x in value.split(";") if x.strip()]
 
 
+def _process_row(raw_data: dict) -> dict:
+    try:
+        source_model = WithdrawnSourceData(**raw_data)
+
+        raw_key = raw_data.get("inchikey")
+        if raw_key and isinstance(raw_key, str):
+            raw_key = raw_key.strip()
+            if raw_key == "":
+                raw_key = None
+
+        if not raw_key:
+            return {
+                "status": "skipped",
+                "name": raw_data.get("drugname", "Unknown"),
+                "raw_data": raw_data,
+            }
+
+        try:
+            drug_entry = DrugSchema(
+                inchi_key=raw_key,
+                generic_name=raw_data.get("drugname"),
+                inchi=raw_data.get("inchi"),
+                smiles=raw_data.get("smiles"),
+                chem_formula=raw_data.get("formula"),
+                mol_weight=raw_data.get("molwt"),
+                drugbank_id=raw_data.get("DrugbankID"),
+                chembl_id=raw_data.get("chemblid"),
+            )
+        except ValidationError:
+            return {
+                "status": "skipped",
+                "name": raw_data.get("drugname", "Unknown"),
+                "raw_data": raw_data,
+            }
+
+        return {
+            "status": "success",
+            "drug": drug_entry.model_dump(),
+            "record_json": source_model.model_dump(exclude_none=True),
+        }
+
+    except Exception as e:
+        return {"status": "error", "error": str(e), "raw_data": raw_data}
+
+
 class WithdrawnDbScraper(BaseFileScraper):
+    def __init__(self, session: Session, version: str, file_path: str):
+        super().__init__(session, "Withdrawn", version, file_path)
+
     def _extract(self) -> Iterator[pd.Series]:
         reader = pd.read_csv(
             self.file_path,
@@ -92,52 +142,54 @@ class WithdrawnDbScraper(BaseFileScraper):
             engine="c",
         )
 
-        for chunk in reader:
-            chunk = chunk.replace({np.nan: None})
-            for row in chunk.itertuples(index=False, name="Row"):
-                yield row
+        def row_stream(reader):
+            for chunk in reader:
+                chunk = chunk.replace({np.nan: None})
+                for row in chunk.to_dict(orient="records"):
+                    yield row
+
+        with Pool() as pool:
+            print(f"Workers: {pool._processes}")
+            results = pool.imap_unordered(
+                _process_row, row_stream(reader), chunksize=20
+            )
+
+            for result in results:
+                if result:
+                    yield result
 
     def _get_adapter(self) -> WithdrawnDbAdapter:
         return WithdrawnDbAdapter()
 
 
 class WithdrawnDbAdapter(BaseAdapter):
+    def __init__(self):
+        self.skipped = []
+
     def standardise(self, row_data: NamedTuple) -> ScraperPayload | None:
-        raw_data = row_data._asdict()
-        try:
-            source_json = WithdrawnSourceData(**raw_data)
+        status = row_data.get("status")
 
-            valid_data = source_json.model_dump(exclude_none=True)
-
-            if "withdrawn_id" in valid_data:
-                del valid_data["withdrawn_id"]
-
-            if not valid_data:
-                return None
-
-            drug_data = DrugSchema(
-                inchi_key=raw_data.get("inchi_key"),
-                generic_name=raw_data.get("drugname"),
-                inchi=raw_data.get("inchi"),
-                smiles=raw_data.get("smiles"),
-                chem_formula=raw_data.get("formula"),
-                mol_weight=raw_data.get("molwt"),
-                drugbank_id=raw_data.get("DrugbankID"),
-                chembl_id=raw_data.get("chemblid"),
+        if status == "skipped":
+            self.skipped.append(
+                {"name": row_data.get("name"), "raw_data": row_data.get("raw_data")}
             )
+            return None
+
+        if status == "success":
+            source_json = row_data["record_json"]
+            if "withdrawn_id" in source_json:
+                del source_json["withdrawn_id"]
 
             return ScraperPayload(
-                drug=drug_data,
-                record=RecordSchema(
-                    data_json=source_json.model_dump(exclude_none=True)
-                ),
+                drug=DrugSchema(**row_data["drug"]),
+                record=RecordSchema(data_json=source_json),
             )
-        except ValueError as e:
-            print(f"ERROR: invalid data cannot be mapped: {e}")
+
+        if status == "error":
+            print(f"[WORKER ERROR] {row_data.get('error')}")
             return None
-        except Exception as e:
-            print(f"ERROR: {e}")
-            return None
+
+        return None
 
 
 if __name__ == "__main__":
@@ -154,9 +206,7 @@ if __name__ == "__main__":
     session = db.get_session()
     try:
         with session:
-            scraper = WithdrawnDbScraper(
-                db.get_session(), "Withdrawn", "2.0", data_path.resolve()
-            )
+            scraper = WithdrawnDbScraper(db.get_session(), "2.0", data_path.resolve())
 
             scraper.run()
     except KeyboardInterrupt:
