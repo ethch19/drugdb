@@ -473,8 +473,9 @@ if __name__ == "__main__":
     from drug_db.database.manager import db
 
     BASE_DIR = Path(__file__).parent.parent.parent.resolve()
-    data_path = BASE_DIR / ".." / "data" / "drugbank.xml"
-    schema_path = BASE_DIR / ".." / "data" / "drugbank.xsd"
+    DATA_DIR = BASE_DIR / ".." / "data"
+    data_path = DATA_DIR / "drugbank.xml"
+    schema_path = DATA_DIR / "drugbank.xsd"  # no more schema validation, takes too long
 
     db.create_tables()
     session = db.get_session()

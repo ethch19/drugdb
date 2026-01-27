@@ -5,6 +5,11 @@ from pathlib import Path
 
 import pandas as pd
 
+CUR_DIR = Path(__file__).parent
+ROOT_DIR = CUR_DIR.parent.parent.parent
+DATA_DIR = ROOT_DIR / "data"
+DATASTORE_DIR = ROOT_DIR / "datastore"
+
 
 class UNIIResolver:
     def __init__(self):
@@ -12,9 +17,10 @@ class UNIIResolver:
         self.file_path = self._find_latest_file()
 
         if self.file_path:
-            self.cache_path = self.file_path.with_suffix(".pkl")
+            relative = self.file_path.relative_to(DATA_DIR)
+            self.cache_path = DATASTORE_DIR / relative.with_suffix(".pkl")
 
-            # 3. Load Cache if valid, else Process CSV
+            # load cache if valid
             if self._is_cache_valid():
                 print(f"Loading cached UNII data from: {self.cache_path.name}")
                 self._load_from_cache()
@@ -25,14 +31,11 @@ class UNIIResolver:
             print("ERROR: No UNII_Records_*.txt file found in data/ directory")
 
     def _find_latest_file(self) -> Path | None:
-        repo_root = Path.cwd()
-        data_dir = repo_root / "data"
-
-        if not data_dir.exists():
-            print(f"ERROR: Could not locate data directory at {data_dir}")
+        if not DATA_DIR.exists():
+            print(f"ERROR: Could not locate data directory at {DATA_DIR}")
             return None
 
-        files = list(data_dir.glob("UNII_Records_*.txt"))
+        files = list(DATA_DIR.glob("UNII_Records_*.txt"))
         if not files:
             return None
 

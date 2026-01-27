@@ -13,23 +13,23 @@ from sqlalchemy import (
 
 CUR_DIR = Path(__file__).parent
 ROOT_DIR = CUR_DIR.parent.parent.parent
-DATA_DIR = ROOT_DIR / "data"
+DATASTORE_DIR = ROOT_DIR / "datastore"
 
 
 class PubChemRetriever:
     def __init__(self):
         self.engine = create_engine(
-            f"sqlite:///{DATA_DIR / 'pubchem_identifiers.db'}", echo=False
+            f"sqlite:///{DATASTORE_DIR / 'pubchem_identifiers.db'}", echo=False
         )
         self.conn = self.engine.connect()
         self.conn.execute(
             text(
-                f"ATTACH DATABASE '{(DATA_DIR / 'pubchem_structures.db').absolute()}' AS struct_db"
+                f"ATTACH DATABASE '{(DATASTORE_DIR / 'pubchem_structures.db').absolute()}' AS struct_db"
             )
         )
         self.conn.execute(
             text(
-                f"ATTACH DATABASE '{(DATA_DIR / 'pubchem_synonyms.db').absolute()}' AS syn_db"
+                f"ATTACH DATABASE '{(DATASTORE_DIR / 'pubchem_synonyms.db').absolute()}' AS syn_db"
             )
         )
 
@@ -125,17 +125,3 @@ class PubChemRetriever:
 
     def close(self):
         self.conn.close()
-
-
-if __name__ == "__main__":
-    db = PubChemRetriever()
-
-    data = db.get_by_name("Warfarin")
-    if data:
-        print(f"SMILES: {data['smiles']}")
-
-    data = db.get_by_inchi_key("PJVWKTKQMONHTI-UHFFFAOYSA-N")
-    if data:
-        print(f"Name: {data['synonym']}")
-
-    db.close()

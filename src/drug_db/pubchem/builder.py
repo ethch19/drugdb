@@ -10,8 +10,10 @@ from drug_db.pubchem.base import Identifier, Structure, Synonym
 CUR_DIR = Path(__file__).parent
 ROOT_DIR = CUR_DIR.parent.parent.parent
 DATA_DIR = ROOT_DIR / "data"
+DATASTORE_DIR = ROOT_DIR / "datastore"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+DATASTORE_DIR.mkdir(parents=True, exist_ok=True)
 
 TASKS = [
     {
@@ -53,7 +55,7 @@ def get_existing_count(engine, table_name):
 
 def process_task(task):
     print(f"Processing {task['db']}...")
-    db_path = DATA_DIR / f"{task['db']}"
+    db_path = DATASTORE_DIR / f"{task['db']}"
     engine = create_engine(f"sqlite:///{db_path.absolute()}", echo=False)
     table_name = task["model"].__tablename__
 
