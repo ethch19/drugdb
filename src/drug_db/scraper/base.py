@@ -66,8 +66,8 @@ class BaseScraper(ABC):
                         self.session.commit()
                         timers["db_load"] += time.perf_counter() - t3
 
-                    # if (count + skipped_count) > 1000:
-                    #     break
+                    if (count + skipped_count) > 1000:
+                        break
                 else:
                     skipped_count += 1
 
@@ -123,6 +123,17 @@ class BaseScraper(ABC):
 
         if init_drug:
             final_drug = init_drug
+            # only replace when existing is empty
+            for key, new_val in drug_data.items():
+                if not hasattr(final_drug, key):
+                    continue
+                cur_val = getattr(final_drug, key)
+                if key == "synonyms":
+                    combined = set(cur_val + (new_val or []))
+                    setattr(final_drug, key, sorted(list(combined)))
+                else:
+                    if not cur_val and new_val:
+                        setattr(final_drug, key, new_val)
         else:
             final_drug = Drug(**drug_data)
             self.session.add(final_drug)
@@ -135,12 +146,13 @@ class BaseScraper(ABC):
 
         new_data = payload.record.data_json
         if existing_record:
-            print(
-                f"\nDuplicate {payload.drug.inchi_key} ({drug_data.get('generic_name')})"
-            )
+            # print(
+            #     f"\nDuplicate {payload.drug.inchi_key} ({drug_data.get('generic_name')})"
+            # )
 
             current_record = existing_record.data_json or {}
 
+            # replaces existing values with new record
             for key, new_val in new_data.items():
                 if key in current_record:
                     cur_val = current_record[key]
@@ -156,7 +168,9 @@ class BaseScraper(ABC):
                 else:
                     current_record[key] = new_val
 
-            existing_record.data_json = dict(current_record)
+            existing_record.data_json = dict(
+                current_record
+            )  # must be reassigned for changes to be detected
         else:
             source_record = SourceRecord(
                 source_id=self.source_id,

@@ -7,16 +7,13 @@ from typing import Any, Dict, Iterator, List
 
 from lxml import etree
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from rdkit import Chem
+from rdkit.Chem.rdMolDescriptors import CalcExactMolWt, CalcMolFormula
 
 from drug_db.database.manager import Session
 from drug_db.models.schemas import DrugSchema, RecordSchema, ScraperPayload
 from drug_db.scraper.base import BaseAdapter, BaseFileScraper
-
-
-class Product(BaseModel):
-    name: str
-    labeller: str | None = None
-    country: str | None = None
+from drug_db.scraper.unii import unii_resolver
 
 
 class Property(BaseModel):
@@ -35,6 +32,7 @@ class DrugbankData(BaseModel):
 
     drugbank_id: str = Field(alias="drugbank-id")
     drugname: str = Field(alias="name")
+    unii: str | None = None
 
     # optional primitive fields
     description: str | None = None
@@ -45,7 +43,7 @@ class DrugbankData(BaseModel):
     synonyms: List[str] = Field(default_factory=list)
     groups: List[str] = Field(default_factory=list)
     categories: List[Dict[str, Any]] = Field(default_factory=list)
-    atc_codes: List[Dict[str, Any]] = Field(default_factory=list)
+    atc_codes: List[str] = Field(default_factory=list, alias="atc-codes")
     calculated_props: List[Property] = Field(
         default_factory=list, alias="calculated-properties"
     )
@@ -83,7 +81,6 @@ class DrugbankData(BaseModel):
         "synonyms",
         "groups",
         "categories",
-        "atc_codes",
         "calculated_props",
         "experimental_props",
         "external_ids",
@@ -127,6 +124,32 @@ class DrugbankData(BaseModel):
                 clean_list.append(item)
         return clean_list
 
+    @field_validator("atc_codes", mode="before")
+    @classmethod
+    def decompose_atc_codes(cls, value: any) -> list[str]:
+        if not value:
+            return []
+
+        if isinstance(value, dict):
+            value = value.get("atc-code", [])
+
+        if isinstance(value, dict):
+            value = [value]
+
+        if not isinstance(value, list):
+            return []
+
+        extracted_codes = []
+        for item in value:
+            if isinstance(item, dict):
+                code = item.get("code")
+                if code:
+                    extracted_codes.append(code)
+            elif isinstance(item, str):
+                extracted_codes.append(item)
+
+        return extracted_codes
+
     @model_validator(mode="after")
     def decompose_props(self) -> DrugbankData:
         prop_map = {
@@ -146,6 +169,35 @@ class DrugbankData(BaseModel):
                 self.chembl_id = vid.identifier
                 break
 
+        try:
+            self.synonyms.remove(self.drugname)
+        except ValueError:
+            pass
+
+        if self.inchi and not self.inchi_key:
+            try:
+                self.inchi_key = Chem.InchiToInchiKey(self.inchi)
+                return self
+            except Exception:
+                pass
+
+        if self.unii and (not self.inchi_key or not self.smiles):
+            cal_data = unii_resolver.resolve(self.unii)
+            if cal_data:
+                self.inchi_key = self.inchi_key or cal_data.get("inchi_key")
+                self.smiles = self.smiles or cal_data.get("smiles")
+                self.formula = self.formula or cal_data.get("mol_formula")
+
+        if self.smiles and not self.inchi_key:
+            try:
+                mol = Chem.MolFromSmiles(self.smiles)
+                if mol:
+                    self.inchi_key = Chem.MolToInchiKey(mol)
+                    self.inchi = self.inchi or Chem.MolToInchi(mol)[0]
+                    self.formula = self.formula or CalcMolFormula(mol)
+                    self.mol_weight = self.mol_weight or CalcExactMolWt(mol)
+            except Exception:
+                pass
         return self
 
 
@@ -163,11 +215,12 @@ def _drug_processing_thread(raw_xml: bytes) -> dict | None:
 
         drugdata_model = DrugbankData(**drug_data)
         if not drugdata_model.inchi_key:
+            clean_return = drugdata_model.model_dump(exclude_none=True)
             return {
                 "pre_processed": True,
                 "status": "skipped",
                 "name": drugdata_model.drugname,
-                "raw_data": drug_data,
+                "raw_data": clean_return,
                 "time_taken": time.perf_counter() - timer_start,
             }
 

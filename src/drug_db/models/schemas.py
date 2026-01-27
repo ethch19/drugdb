@@ -3,6 +3,7 @@ from typing import Any
 import pubchempy as pcp
 from pydantic import BaseModel, Field, field_validator, model_validator
 from rdkit import Chem
+from rdkit.Chem.rdMolDescriptors import CalcExactMolWt, CalcMolFormula
 
 
 class DrugSchema(BaseModel):
@@ -20,30 +21,52 @@ class DrugSchema(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def missing_ids(cls, data: dict):
+    def prop_filler(cls, data: dict):
         if not isinstance(data, dict):
             return data
 
         inchi_key = data.get("inchi_key")
         inchi = data.get("inchi")
-        smiles = data.get("smiles")
         name = data.get("generic_name")
+        mol_weight = data.get("mol_weight")
+        chem_formula = data.get("chem_formula")
+        smiles = data.get("smiles")
 
-        if not inchi_key and smiles:
+        checklist = [inchi, inchi_key, mol_weight, chem_formula]
+        empty_fields = any(
+            v is None or (isinstance(v, str) and not v.strip()) for v in checklist
+        )
+
+        # local compute from smiles or inchi/inchi_key
+        if empty_fields:
+            mol = None
             try:
-                mol = Chem.MolFromSmiles(smiles)
+                if smiles and isinstance(smiles, str) and smiles.strip():
+                    mol = Chem.MolFromSmiles(smiles)
+                if not mol and inchi and isinstance(inchi, str) and inchi.strip():
+                    mol = Chem.MolFromInchi(inchi)
+
                 if mol:
-                    if not inchi:
-                        inchi = Chem.MolToInchi(mol)
-                        data["inchi"] = inchi
-                    new_key = Chem.InchiToInchiKey(inchi)
-                    data["inchi_key"] = new_key
+                    calculated = {
+                        "inchi": Chem.MolToInchi(mol)[0],
+                        "inchi_key": Chem.MolToInchiKey(mol),
+                        "mol_weight": CalcExactMolWt(mol),
+                        "chem_formula": CalcMolFormula(mol),
+                        "smiles": Chem.MolToSmiles(mol),
+                    }
+
+                    for field, new_val in calculated.items():
+                        cur_val = data.get(field)
+                        if cur_val is None or (
+                            isinstance(cur_val, str) and not cur_val.strip()
+                        ):
+                            data[field] = new_val
+                    return data
             except Exception:
                 pass
 
-        missing_ids = not data.get("inchi_key")
-
-        if missing_ids and name:
+        # api calls with no smiles + only name
+        if not data.get("inchi_key") and name:
             try:
                 results = pcp.get_compounds(name, "name")
 
@@ -56,9 +79,7 @@ class DrugSchema(BaseModel):
                     if not data.get("inchi"):
                         data["inchi"] = top_result.inchi
                     if not data.get("smiles"):
-                        data["smiles"] = (
-                            top_result.isomeric_smiles
-                        )  # Fixed deprecation warning
+                        data["smiles"] = top_result.smiles
                     if not data.get("mol_weight"):
                         data["mol_weight"] = top_result.molecular_weight
                     if not data.get("chem_formula"):
@@ -81,6 +102,17 @@ class DrugSchema(BaseModel):
         if value is None:
             return []
         return value
+
+    @field_validator("smiles", mode="before")
+    @classmethod
+    def canonical_smiles(cls, value: any) -> str:
+        if value is None or not str(value).strip():
+            return ""
+
+        mol = Chem.MolFromSmiles(value)
+        if mol is None:
+            return None
+        return Chem.MolToSmiles(mol, isomericSmiles=True, canonical=True)
 
 
 class RecordSchema(BaseModel):

@@ -57,7 +57,9 @@ class SourceRecord(Base):
         ForeignKey("drugs.inchi_key", ondelete="CASCADE"), index=True
     )
     source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), index=True)
-    data_json: Mapped[dict] = mapped_column(JSON)  # staged before saving
+    data_json: Mapped[dict] = mapped_column(
+        JSON
+    )  # for changes detection, must be fully reassigned
 
     drug: Mapped["Drug"] = relationship(back_populates="sources", init=False)
     source: Mapped["Source"] = relationship(back_populates="records", init=False)
