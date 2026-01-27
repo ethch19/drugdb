@@ -2,8 +2,7 @@ from pathlib import Path
 
 from huggingface_hub import snapshot_download
 
-CUR_DIR = Path(__file__).parent
-ROOT_DIR = CUR_DIR.parent.parent.parent
+ROOT_DIR = Path(__file__).parent
 DATASTORE_DIR = ROOT_DIR / "datastore"
 
 REPO_ID = "ethch19/drugdb"
