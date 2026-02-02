@@ -1,6 +1,7 @@
+import os
 from pathlib import Path
 
-from sqlalchemy import Engine, create_engine, event
+from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from drug_db.models.base import Base
@@ -17,6 +18,9 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
 
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
+    mode = os.environ.get("DB_MODE", "WAL")
+    cursor.execute(f"PRAGMA journal_mode={mode}")
+    cursor.execute("PRAGMA busy_timeout=5000")
     cursor.close()
 
     dbapi_connection.autocommit = ac
@@ -37,3 +41,15 @@ class DbManager:
 
 
 db = DbManager()
+
+if __name__ == "__main__":
+    os.environ["DB_MODE"] = "DELETE"
+
+    try:
+        with db.engine.connect() as conn:
+            print("   > Merging WAL data...")
+            conn.execute(text("VACUUM;"))
+
+        print("Files merged.")
+    except Exception as e:
+        print(f"Error: {e}")
