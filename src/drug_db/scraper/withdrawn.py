@@ -1,3 +1,22 @@
+"""
+JSON SCHEMA:
+withdrawn_id: str
+atc_code: str | None
+pubchem_cid: str | None
+ctd_id: str | None
+inchikey_jchem: str | None
+
+
+ld50: float | None
+protox_toxclass: int | None
+
+first_withdrawn_year: int | None
+last_withdrawn_year: int | None
+first_approval_year: int | None
+withdrawal_countries: List[str] | None
+toxicity_types: List[str] | None
+"""
+
 from multiprocessing import Pool
 from typing import Iterator, List, NamedTuple
 
