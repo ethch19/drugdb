@@ -1,4 +1,3 @@
-import json
 import os
 import time
 from abc import ABC, abstractmethod
@@ -6,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
+import pandas as pd
 import requests
 from sqlalchemy.orm import Session
 from tqdm import tqdm
@@ -18,10 +18,13 @@ from .adapters import BaseAdapter
 
 
 class BaseScraper(ABC):
-    def __init__(self, session: Session, source_name: str, version: str):
+    def __init__(
+        self, session: Session, source_name: str, version: str, run_skip: bool = False
+    ):
         self.session = session
         self.source_name = source_name
         self.version = version
+        self.run_skip = run_skip
 
         self.source_id = self._register_source()
         self.adapter = self._get_adapter()
@@ -34,6 +37,9 @@ class BaseScraper(ABC):
     def _get_adapter(self) -> BaseAdapter:
         pass
 
+    def _extract_skipped(self) -> Iterator[any]:
+        return iter([])
+
     def run(self):
         timers = {
             "extraction": 0.0,
@@ -42,7 +48,10 @@ class BaseScraper(ABC):
         }
         count = 0
         skipped_count = 0
-        data = self._extract()
+        if self.run_skip:
+            data = self._extract_skipped()
+        else:
+            data = self._extract()
         iterator = iter(tqdm(data, desc="Processing database", unit="record"))
 
         while True:
@@ -66,8 +75,8 @@ class BaseScraper(ABC):
                         self.session.commit()
                         timers["db_load"] += time.perf_counter() - t3
 
-                    if (count + skipped_count) > 1000:
-                        break
+                    # if (count + skipped_count) > 1000:
+                    #     break
                 else:
                     skipped_count += 1
 
@@ -106,11 +115,11 @@ class BaseScraper(ABC):
             repo_root = Path(__file__).resolve().parents[3]
             skipped_json = (
                 repo_root
-                / "data"
-                / (self.source_name.strip().lower() + "_skipped.json")
+                / "datastore"
+                / (self.source_name.strip().lower() + "_skipped.jsonl")
             )
-            with open(skipped_json, "w", encoding="utf-8") as f:
-                json.dump(self.adapter.skipped, f, indent=2)
+            json_df = pd.DataFrame(self.adapter.skipped)
+            json_df.to_json(skipped_json, orient="records", lines=True)
 
     def _load(self, payload: ScraperPayload):
         drug_data = payload.drug.model_dump()

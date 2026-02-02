@@ -1,3 +1,19 @@
+"""
+JSON SCHEMA:
+unii: str | None = None
+
+description: str | None = None
+toxicity: str | None = None
+moa: str | None
+
+synonyms: List[str] | None
+groups: List[str] | None
+categories: List[Dict[str, Any]] | None
+atc_codes: List[str] | None
+
+lists are empty, instead of "None"
+"""
+
 from __future__ import annotations
 
 import os
@@ -5,15 +21,31 @@ import time
 from multiprocessing import Pool
 from typing import Any, Dict, Iterator, List
 
+import pandas as pd
 from lxml import etree
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 from rdkit import Chem
 from rdkit.Chem.rdMolDescriptors import CalcExactMolWt, CalcMolFormula
 
 from drug_db.database.manager import Session
 from drug_db.models.schemas import DrugSchema, RecordSchema, ScraperPayload
+from drug_db.pubchem.retrieval import pubchem_retriever
 from drug_db.scraper.base import BaseAdapter, BaseFileScraper
 from drug_db.scraper.unii import unii_resolver
+
+# TO IMPLEMENT
+# current bottleneck is pipe throughput to/between processes
+# putting the xml bytes as shared memory buffers via multiprocessing.shared_memory
+# this solves the problem of copying data over, and only need to pass buffer's pointers to processes instead of the entire data
+# largest single object in the drugbank.xml is roughly 20MB, so 30MB just in case
+# reserve at least twice at much buffers. eg. for a 16 multithreaded cpu, reserve 32 30MB buffers (960MB = 0.96GB)
+BUFFER_SIZE = 30 * 1024 * 1024  # 30MB
 
 
 class Property(BaseModel):
@@ -198,6 +230,26 @@ class DrugbankData(BaseModel):
                     self.mol_weight = self.mol_weight or CalcExactMolWt(mol)
             except Exception:
                 pass
+
+        if not self.inchi_key and self.drugname:
+            try:
+                result = pubchem_retriever.get_by_name(self.drugname)
+                # default to no synonym in result
+
+                if result:
+                    mol = Chem.MolFromInchi(result["inchi"])
+                    self.inchi_key = self.inchi_key or result["inchi_key"]
+                    self.inchi = self.inchi or result["inchi"]
+                    self.smiles = self.smiles or result["smiles"]
+                    self.mol_weight = self.mol_weight or CalcExactMolWt(mol)
+                    self.formula = self.formula or CalcMolFormula(mol)
+                    if "synonyms" in result:
+                        self.synonyms = sorted(
+                            list(set(self.synonyms + (result["synonyms"] or [])))
+                        )
+
+            except Exception as e:
+                print(f"ERROR: pubchem lookup failed: {e}")
         return self
 
 
@@ -307,6 +359,68 @@ def xml_to_dict(element):
     return result
 
 
+def _process_row(raw_data: dict) -> dict:
+    timer_start = time.perf_counter()
+    try:
+        drug_model = DrugbankData(**raw_data)
+
+        if not drug_model.inchi_key:
+            return {
+                "pre_processed": True,
+                "status": "skipped",
+                "name": drug_model.drugname,
+                "raw_data": raw_data,
+                "time_taken": time.perf_counter() - timer_start,
+            }
+
+        exclude_keys = {
+            "drugname",
+            "inchi_key",
+            "inchi",
+            "smiles",
+            "formula",
+            "mol_weight",
+            "drugbank_id",
+            "chembl_id",
+            "calculated_props",
+            "experimental_props",
+            "external_ids",
+        }
+
+        drug_cols = {
+            "inchi_key": drug_model.inchi_key,
+            "generic_name": drug_model.drugname,
+            "inchi": drug_model.inchi,
+            "smiles": drug_model.smiles,
+            "chem_formula": drug_model.formula,
+            "mol_weight": drug_model.mol_weight,
+            "drugbank_id": drug_model.drugbank_id,
+            "chembl_id": drug_model.chembl_id,
+            "synonyms": drug_model.synonyms,
+        }
+
+        record_json = drug_model.model_dump(
+            mode="json", exclude_none=True, exclude=exclude_keys
+        )
+
+        return {
+            "pre_processed": True,
+            "status": "success",
+            "drug_cols": drug_cols,
+            "record_json": record_json,
+            "raw_backup": raw_data,
+            "time_taken": time.perf_counter() - timer_start,
+        }
+
+    except Exception as e:
+        return {
+            "pre_processed": False,
+            "error": str(e),
+            "raw_data": raw_data,
+            "time_taken": time.perf_counter() - timer_start,
+        }
+
+
 class DrugbankScraper(BaseFileScraper):
     def __init__(
         self,
@@ -335,6 +449,23 @@ class DrugbankScraper(BaseFileScraper):
 
         self.schema_file_path = xsd_file_path
         super().__init__(session, "Drugbank", version, xml_file_path)
+
+    def _extract_skipped(self) -> Iterator[dict]:
+        reader = pd.read_json(
+            self.file_path, orient="records", lines=True, chunksize=50
+        )
+
+        row_stream = (
+            row for chunk in reader for row in chunk.to_dict(orient="records")
+        )
+
+        with Pool() as pool:
+            print(f"Workers: {pool._processes}")
+            results = pool.imap_unordered(_process_row, row_stream, chunksize=10)
+
+            for result in results:
+                if result:
+                    yield result
 
     def _extract(self) -> Iterator[dict]:
         ns = "{http://www.drugbank.ca}"
