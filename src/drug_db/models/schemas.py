@@ -1,9 +1,10 @@
 from typing import Any
 
-import pubchempy as pcp
 from pydantic import BaseModel, Field, field_validator, model_validator
 from rdkit import Chem
 from rdkit.Chem.rdMolDescriptors import CalcExactMolWt, CalcMolFormula
+
+from drug_db.pubchem.retrieval import pubchem_retriever
 
 
 class DrugSchema(BaseModel):
@@ -68,26 +69,30 @@ class DrugSchema(BaseModel):
         # api calls with no smiles + only name
         if not data.get("inchi_key") and name:
             try:
-                results = pcp.get_compounds(name, "name")
+                result = pubchem_retriever.get_by_name(name)
+                # default to no synonym in result
 
-                if results:
-                    top_result = results[0]
-                    # perhaps require human intervention??? entirely relying on search algo + name being correct
-
+                if result:
+                    mol = Chem.MolFromInchi(result["inchi"])
                     if not data.get("inchi_key"):
-                        data["inchi_key"] = top_result.inchikey
+                        data["inchi_key"] = result["inchi_key"]
                     if not data.get("inchi"):
-                        data["inchi"] = top_result.inchi
+                        data["inchi"] = result["inchi"]
                     if not data.get("smiles"):
-                        data["smiles"] = top_result.smiles
+                        data["smiles"] = result["smiles"]
                     if not data.get("mol_weight"):
-                        data["mol_weight"] = top_result.molecular_weight
+                        data["mol_weight"] = CalcExactMolWt(mol)
                     if not data.get("chem_formula"):
-                        data["chem_formula"] = top_result.molecular_formula
+                        data["chem_formula"] = CalcMolFormula(mol)
+                    if "synonyms" in result:
+                        data["synonyms"] = sorted(
+                            list(set(data["synonyms"] + (result["synonyms"] or [])))
+                        )
 
-                    # query another db for missing chembl_id or drugbank_id
             except Exception as e:
                 print(f"ERROR: pubchem lookup failed: {e}")
+
+        # query another db for missing chembl_id or drugbank_id
         return data
 
     @model_validator(mode="after")
