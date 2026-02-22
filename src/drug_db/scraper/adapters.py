@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from drug_db.scraper.base import ScraperPayload
+from drug_db.models.schemas import ScraperPayload
 
 
 class BaseAdapter(ABC):

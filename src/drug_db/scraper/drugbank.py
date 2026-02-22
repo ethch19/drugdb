@@ -7,7 +7,7 @@ toxicity: str | None = None
 moa: str | None
 
 synonyms: List[str] | None
-groups: List[str] | None
+groups: List[str] | None (any of these: approved, illicit, experimental, withdrawn, nutraceutical, investigational, vet_approved)
 categories: List[Dict[str, Any]] | None
 atc_codes: List[str] | None
 

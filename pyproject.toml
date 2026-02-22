@@ -10,8 +10,10 @@ description = "collection of drugs from various sources"
 requires-python = ">=3.14"
 dependencies = [
     "beautifulsoup4>=4.14.3",
+    "cmappy>=4.0.1",
     "huggingface-hub>=1.3.4",
     "lxml>=6.0.2",
+    "openpyxl>=3.1.5",
     "pandas>=3.0.0",
     "pydantic>=2.12.5",
     "rdkit>=2025.9.3",
