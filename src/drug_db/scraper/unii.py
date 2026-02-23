@@ -16,19 +16,18 @@ class UNIIResolver:
         self.mapping = {}
         self.file_path = self._find_latest_file()
 
-        if self.file_path:
-            relative = self.file_path.relative_to(DATA_DIR)
-            self.cache_path = DATASTORE_DIR / relative.with_suffix(".pkl")
+        relative = self.file_path.relative_to(DATA_DIR)
+        self.cache_path = DATASTORE_DIR / relative.with_suffix(".pkl")
 
-            # load cache if valid
-            if self._is_cache_valid():
-                print(f"Loading cached UNII data from: {self.cache_path.name}")
-                self._load_from_cache()
-            else:
+        if self._is_cache_valid():
+            print(f"Loading cached UNII data from: {self.cache_path.name}")
+            self._load_from_cache()
+        else:
+            if self.file_path:
                 print(f"Parsing raw CSV: {self.file_path.name}")
                 self._load_data()
-        else:
-            print("ERROR: No UNII_Records_*.txt file found in data/ directory")
+            else:
+                print("ERROR: No UNII_Records_*.txt file found in data/ directory")
 
     def _find_latest_file(self) -> Path | None:
         if not DATA_DIR.exists():
