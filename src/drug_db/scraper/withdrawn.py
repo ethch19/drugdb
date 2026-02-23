@@ -225,7 +225,7 @@ if __name__ == "__main__":
     session = db.get_session()
     try:
         with session:
-            scraper = WithdrawnDbScraper(db.get_session(), "2.0", data_path.resolve())
+            scraper = WithdrawnDbScraper(session, "2.0", data_path.resolve())
 
             scraper.run()
     except KeyboardInterrupt:

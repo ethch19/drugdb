@@ -27,7 +27,7 @@ def _process_worker(raw_data: dict) -> dict:
         }
 
     try:
-        drug = DrugSchema(smiles=smiles, generic_name="Unknown")
+        drug = DrugSchema(smiles=smiles, generic_name=None)
         is_mutagenic = bool(int(activity))
 
         return {
@@ -114,7 +114,7 @@ if __name__ == "__main__":
     session = db.get_session()
     try:
         with session:
-            scraper = AmesScraper(db.get_session(), data_path.resolve(), "v2")
+            scraper = AmesScraper(session, data_path.resolve(), "2.0")
             scraper.run()
     except KeyboardInterrupt:
         sys.exit(0)

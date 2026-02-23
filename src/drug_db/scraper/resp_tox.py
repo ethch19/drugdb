@@ -27,7 +27,7 @@ def _process_worker(raw_data: dict) -> dict:
         }
 
     try:
-        drug = DrugSchema(smiles=smiles, generic_name="Unknown")
+        drug = DrugSchema(smiles=smiles, generic_name=None)
         is_toxic = bool(int(label))
 
         return {
@@ -112,7 +112,7 @@ if __name__ == "__main__":
     session = db.get_session()
     try:
         with session:
-            scraper = RespToxScraper(db.get_session(), data_path.resolve())
+            scraper = RespToxScraper(session, data_path.resolve())
             scraper.run()
     except KeyboardInterrupt:
         sys.exit(0)

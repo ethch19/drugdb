@@ -613,7 +613,7 @@ if __name__ == "__main__":
     try:
         with session:
             scraper = DrugbankScraper(
-                db.get_session(), data_path.resolve(), schema_path.resolve()
+                session, data_path.resolve(), schema_path.resolve()
             )
 
             scraper.run()

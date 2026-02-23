@@ -1,10 +1,12 @@
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
-from rdkit import Chem
+from rdkit import Chem, RDLogger
 from rdkit.Chem.rdMolDescriptors import CalcExactMolWt, CalcMolFormula
 
 from drug_db.pubchem.retrieval import pubchem_retriever
+
+RDLogger.DisableLog("rdApp.warning")
 
 
 class DrugSchema(BaseModel):

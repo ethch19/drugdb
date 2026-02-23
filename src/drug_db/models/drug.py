@@ -21,10 +21,10 @@ class Drug(Base):  # normalised (core data model)
     inchi_key: Mapped[str] = mapped_column(
         unique=True, index=True
     )  # derived from IUPAC
-    generic_name: Mapped[str]  # INN
     inchi: Mapped[str]
     chem_formula: Mapped[str]
     mol_weight: Mapped[float]
+    generic_name: Mapped[str | None] = mapped_column(default=None)  # INN
     smiles: Mapped[str | None] = mapped_column(default=None)  # canonical
     drugbank_id: Mapped[str | None] = mapped_column(default=None)
     chembl_id: Mapped[str | None] = mapped_column(default=None)
